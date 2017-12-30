@@ -34,9 +34,9 @@
 //  When booking a vacation in a period with the FTE<100%, vacations with a span of more than
 //  FTE% times a work week are counted as FTE days, not full days.  That is, if you work e.g 60%,
 //  normally 3 days/week and you book 1, 2 or 3 calendar days, they are counted as 1,2 or 3 days but if you
-//  book a 4 day or longer period, they are counted as 60% of those in /working/ days (that is, after discounting)
-//  public holidays.  The intention is that part-time employees can also just book 2 weeks of holiday.  If
-//. the results are wrong, book individual days instead.
+//  book a 4 day or longer period, they are counted as 60% of those in /working/ days (that is, after discounting
+//  public holidays).  The intention is that part-time employees can also just book 2 weeks of holiday.
+//  If the results are wrong, book individual days instead.
 //
 //  The minimum granularity of a holiday you can take is half a day, which is discouraged anyway.
 //  This facility is only so that people who work 2 mornings/week (20%) can take a day off.
