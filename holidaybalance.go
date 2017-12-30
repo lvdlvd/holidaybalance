@@ -2,7 +2,7 @@
 // Holidaybalance computes and updates employees vacation balance on google calendar.
 //
 // USAGE
-//      go get -u github.com/lvdlvd/holidaybalance
+//      go install -u github.com/lvdlvd/holidaybalance
 //      # obtain a client_secret.json as per https://developers.google.com/google-apps/calendar/quickstart/go
 //
 //      holidaybalance [-n] user@yourdomain.ai
