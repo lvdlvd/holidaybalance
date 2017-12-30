@@ -414,6 +414,9 @@ func getClient() *calendar.Service {
 
 	cs, err := ioutil.ReadFile(filepath.Join(filepath.Dir(os.Args[0]), "client_secret.json"))
 	if err != nil {
+		cs, err = ioutil.ReadFile(filepath.Join(home, "client_secret.json"))
+	}
+	if err != nil {
 		log.Fatalf("Unable to read client secret file: %v", err)
 	}
 
