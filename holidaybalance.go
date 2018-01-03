@@ -122,7 +122,8 @@ func main() {
 	hfile := filepath.Join(filepath.Dir(os.Args[0]), "publicholidays.json")
 	holidays, err := loadPublicHolidays(hfile)
 	if err != nil {
-		log.Printf("loading public holidays: %v", err)
+		log.Printf("Loading cached public holidays: %v", err)
+		log.Printf("Updating cached public holidays...")
 		holidays = getPublicHolidays(srv)
 		storePublicHolidays(hfile, holidays)
 	}
@@ -342,14 +343,14 @@ func getPublicHolidays(srv *calendar.Service) map[string]string {
 
 		b, e, err := dateSpan(ev)
 		if err != nil {
-			log.Println("skipping %q: %v", ev.Summary, err)
+			log.Printf("skipping %q: %v", ev.Summary, err)
 			continue
 		}
 
 		for d := b; d.Before(e); d = d.AddDate(0, 0, 1) {
 			r[d.Format("2006-01-02")] = ev.Summary
 		}
-		log.Printf("%s %d days: %s", ev.Start.Date, e.Sub(b)/(24*time.Hour), ev.Summary)
+		log.Printf("Public holiday: %s %d days: %s", ev.Start.Date, e.Sub(b)/(24*time.Hour), ev.Summary)
 	}
 
 	return r
