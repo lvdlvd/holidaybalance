@@ -153,18 +153,32 @@ func main() {
 	}
 
 	var (
-		lastDate       = events[0].Start
-		startDate      time.Time
-		fte            float64
-		accrued, spent float64
+		// startDate is the start of the current employment period,
+		// for example when an employee switched from 60% to 80%.
+		startDate time.Time
+		// lastDate is the end of the last processed event past the startDate.
+		// It's used for computing accrued.
+		lastDate *calendar.EventDateTime
+		// lastVacationDate is the end of the last processed vacation event.
+		lastVacationDate *calendar.EventDateTime
+		// fte is the employment percent, 1 = 100%
+		fte float64
+		// accrued represents how much vacation is available.
+		accrued float64
+		// spent represent how much vacation has been used.
+		spent float64
 	)
 
 	for _, ev := range events {
+		if lastDate != nil {
+			accrued += fte * HolidaysPerCalendarDay * float64(mustDate(ev.End).Sub(mustDate(lastDate))/(24*time.Hour))
+			lastDate = ev.End
+		}
+
 		if reStartDay.MatchString(ev.Summary) {
-			if !startDate.IsZero() {
-				// resetting startdate, accrue since last date
-				accrued += fte * HolidaysPerCalendarDay * float64(mustDate(ev.Start).Sub(mustDate(lastDate))/(24*time.Hour))
-				lastDate = ev.End
+			if startDate.IsZero() {
+				// This is the very first day of employment.
+				lastDate = ev.Start
 			}
 
 			startDate = mustDate(ev.Start)
@@ -180,7 +194,8 @@ func main() {
 			} else {
 				fte = 1.0
 			}
-			log.Printf("start date %v (%2.0f%%)", startDate.Format("2006-01-02"), fte*100)
+			log.Printf("Start date %v (%2.0f%%)", startDate.Format("2006-01-02"), fte*100)
+			updateEvent(srv, cal.Id, ev, 0, 0, accrued, spent)
 			continue
 		}
 
@@ -194,13 +209,11 @@ func main() {
 				continue
 			}
 
-			if lastDate.Date > ev.Start.Date {
-				log.Printf("vacation from %s to %s partially accounted for up to %s", ev.Start.Date, ev.End.Date, lastDate.Date)
-				ev.Start = lastDate // patch up
+			if lastVacationDate != nil && lastVacationDate.Date > ev.Start.Date {
+				log.Printf("vacation from %s to %s partially accounted for up to %s", ev.Start.Date, ev.End.Date, lastVacationDate.Date)
+				ev.Start = lastVacationDate // patch up
 			}
-
-			accrued += fte * HolidaysPerCalendarDay * float64(mustDate(ev.End).Sub(mustDate(lastDate))/(24*time.Hour))
-			lastDate = ev.End
+			lastVacationDate = ev.End
 
 			daysOff := float64(workdays[ev.End.Date] - workdays[ev.Start.Date])
 			effDaysOff := daysOff
@@ -214,36 +227,37 @@ func main() {
 			}
 
 			spent += effDaysOff
-			balanceline := fmt.Sprintf("vacation from %s to %s, %.1f days (effective %.1f), accrued %.1f, spent %.1f balance %.1f",
-				ev.Start.Date, ev.End.Date, daysOff, effDaysOff, accrued, spent, accrued-spent)
 
-			fmt.Println(balanceline)
-
-			if *noUpdate {
-				continue
-			}
-
-			lines := strings.Split(ev.Description, "\n")
-			if len(lines) > 0 && strings.HasPrefix(lines[len(lines)-1], "vacation from ") {
-				lines = lines[:len(lines)-1]
-			}
-			lines = append(lines, balanceline)
-			newDescr := strings.Join(lines, "\n")
-
-			if newDescr != ev.Description {
-				if _, err := srv.Events.Patch(cal.Id, ev.Id, &calendar.Event{Description: newDescr}).Do(); err != nil {
-					log.Printf("Error updating event %q (%s): %v", ev.Summary, ev.Start.Date, err)
-				} else {
-					log.Printf("Updated event %q (%s)", ev.Summary, ev.Start.Date)
-				}
-			} else {
-				log.Printf("No need to modify event %q (%s)", ev.Summary, ev.Start.Date)
-			}
-
+			updateEvent(srv, cal.Id, ev, daysOff, effDaysOff, accrued, spent)
 		}
+	}
+}
 
+func updateEvent(srv *calendar.Service, calId string, ev *calendar.Event, daysOff, effDaysOff, accrued, spent float64) {
+	balanceline := fmt.Sprintf("vacation from %s to %s, %.1f days (effective %.1f), accrued %.1f, spent %.1f balance %.1f",
+		ev.Start.Date, ev.End.Date, daysOff, effDaysOff, accrued, spent, accrued-spent)
+	fmt.Println(balanceline)
+
+	if *noUpdate {
+		return
 	}
 
+	lines := strings.Split(ev.Description, "\n")
+	if len(lines) > 0 && strings.HasPrefix(lines[len(lines)-1], "vacation from ") {
+		lines = lines[:len(lines)-1]
+	}
+	lines = append(lines, balanceline)
+	newDescr := strings.Join(lines, "\n")
+
+	if newDescr != ev.Description {
+		if _, err := srv.Events.Patch(calId, ev.Id, &calendar.Event{Description: newDescr}).Do(); err != nil {
+			log.Printf("Error updating event %q (%s): %v", ev.Summary, ev.Start.Date, err)
+		} else {
+			log.Printf("Updated event %q (%s)", ev.Summary, ev.Start.Date)
+		}
+	} else {
+		log.Printf("No need to modify event %q (%s)", ev.Summary, ev.Start.Date)
+	}
 }
 
 func listAllDayEvents(srv *calendar.Service, cal string) []*calendar.Event {
