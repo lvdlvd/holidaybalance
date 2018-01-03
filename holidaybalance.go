@@ -54,7 +54,6 @@
 //
 // KNOWN BUGS
 //
-//  The part time facility needs testing.
 //  Partial public holidays are counted as full days.
 //  The program can not force people to take holidays or to properly record them.
 //  If the public holiday calendar ever garbage-collects old entries, history will change.
@@ -87,7 +86,7 @@ var (
 	reStartDay = regexp.MustCompile(`(?i)employee\s+start\s+da(y|te)`)
 	reVacation = regexp.MustCompile(`(?i)(holiday|vacation)`)
 	reHalfDay  = regexp.MustCompile(`(?i)half\s+day`)
-	rePercent  = regexp.MustCompile(`\d\d\s?%|100\s?%`)
+	rePercent  = regexp.MustCompile(`(\d\d|100)\s?%`)
 )
 
 const (
@@ -155,7 +154,7 @@ func main() {
 	var (
 		lastDate       = events[0].Start
 		startDate      time.Time
-		fte            float64 = 1.0
+		fte            float64
 		accrued, spent float64
 	)
 
@@ -168,15 +167,17 @@ func main() {
 			}
 
 			startDate = mustDate(ev.Start)
-			m := rePercent.FindString(ev.Summary)
-			if m == "" {
-				m = rePercent.FindString(ev.Description)
+			m := rePercent.FindStringSubmatch(ev.Summary)
+			if m == nil {
+				m = rePercent.FindStringSubmatch(ev.Description)
 			}
-			if m != "" {
-				v, err := strconv.Atoi(strings.Fields(m)[0])
-				if err != nil && v < 100 {
+			if m != nil {
+				v, err := strconv.Atoi(m[1])
+				if err == nil && v <= 100 {
 					fte = float64(v) / 100
 				}
+			} else {
+				fte = 1.0
 			}
 			log.Printf("start date %v (%2.0f%%)", startDate.Format("2006-01-02"), fte*100)
 			continue
