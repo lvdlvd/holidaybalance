@@ -231,10 +231,18 @@ func main() {
 			updateEvent(srv, cal.Id, ev, daysOff, effDaysOff, accrued, spent)
 		}
 	}
+
+	if lastVacationDate != nil {
+		now := time.Now()
+		y := mustDate(lastVacationDate).Year()
+		eoy := time.Date(y+1, 1, 1, 0, 0, 0, 0, now.Location())
+		accruedEoy := accrued + fte*HolidaysPerCalendarDay*float64(eoy.Sub(mustDate(lastVacationDate))/(24*time.Hour))
+		fmt.Printf("vacation at %s: accrued %.1f, balance %.1f\n", eoy, accruedEoy, accruedEoy-spent)
+	}
 }
 
 func updateEvent(srv *calendar.Service, calId string, ev *calendar.Event, daysOff, effDaysOff, accrued, spent float64) {
-	balanceline := fmt.Sprintf("vacation from %s to %s, %.1f days (effective %.1f), accrued %.1f, spent %.1f balance %.1f",
+	balanceline := fmt.Sprintf("vacation from %s to %s: %.1f days (effective %.1f), accrued %.1f, spent %.1f balance %.1f",
 		ev.Start.Date, ev.End.Date, daysOff, effDaysOff, accrued, spent, accrued-spent)
 	fmt.Println(balanceline)
 
