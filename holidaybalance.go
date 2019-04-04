@@ -79,6 +79,7 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 
+	"github.com/pkg/errors"
 	"google.golang.org/api/calendar/v3"
 )
 
@@ -107,7 +108,7 @@ func main() {
 	flag.Parse()
 
 	if len(flag.Args()) != 1 {
-		log.Fatalln("Usage: %s user@example.org", os.Args[0])
+		log.Fatalf("Usage: %s user@example.org", os.Args[0])
 	}
 	calName := flag.Arg(0)
 
@@ -115,7 +116,7 @@ func main() {
 
 	cal, err := srv.CalendarList.Get(calName).Do()
 	if err != nil {
-		log.Fatalln(err)
+		log.Fatalln(errors.Wrap(err, fmt.Sprintf("Failed to get events from %s", calName)))
 	}
 	log.Printf("Calendar %q id: %v", calName, cal.Id)
 
@@ -131,7 +132,7 @@ func main() {
 
 	events := listAllDayEvents(srv, calName)
 	if len(events) == 0 {
-		log.Fatalln("No events from %q", calName)
+		log.Fatalf("No events from %q", calName)
 	}
 	endDate := events[0].Start
 	for _, v := range events {
