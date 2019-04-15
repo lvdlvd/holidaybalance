@@ -102,6 +102,7 @@ const (
 )
 
 var noUpdate = flag.Bool("n", false, "don't update the calendar entries with new descriptions")
+var verbose = flag.Bool("v", false, "print more info")
 
 func main() {
 
@@ -200,7 +201,7 @@ func main() {
 			continue
 		}
 
-		if reVacation.MatchString(ev.Summary) {
+		if reVacation.MatchString(ev.Summary) || reHalfDay.MatchString(ev.Summary) {
 			if startDate.IsZero() {
 				log.Fatal("no employee start date set. create a 1 day entry with summary 'Employee Start Date' and re-run this program.")
 			}
@@ -230,6 +231,10 @@ func main() {
 			spent += effDaysOff
 
 			updateEvent(srv, cal.Id, ev, daysOff, effDaysOff, accrued, spent)
+		} else {
+			if *verbose {
+				fmt.Printf("IGNORED: %s\n", ev.Summary)
+			}
 		}
 	}
 
