@@ -121,14 +121,7 @@ func main() {
 	}
 	log.Printf("Calendar %q id: %v", calName, cal.Id)
 
-	hfile := filepath.Join(filepath.Dir(os.Args[0]), "publicholidays.json")
-	holidays, err := loadPublicHolidays(hfile)
-	if err != nil {
-		log.Printf("Loading cached public holidays: %v", err)
-		log.Printf("Updating cached public holidays...")
-		holidays = getPublicHolidays(srv)
-		storePublicHolidays(hfile, holidays)
-	}
+	holidays := loadPublicHolidays(srv)
 	log.Printf("Got %d public holidays", len(holidays))
 
 	events := listAllDayEvents(srv, calName)
@@ -247,6 +240,48 @@ func main() {
 	}
 }
 
+func loadPublicHolidays(srv *calendar.Service) map[string]string {
+	holidays := make(map[string]string)
+	userCacheDir, err := os.UserCacheDir()
+	if err != nil {
+		log.Fatal(err)
+	}
+	cacheDir := filepath.Join(userCacheDir, filepath.Base(os.Args[0]))
+	os.MkdirAll(cacheDir, 0700)
+
+	year := time.Now()
+	hfile := filepath.Join(cacheDir, year.Format("publicholidays-2006.json"))
+	_, err = os.Stat(hfile)
+	if err != nil {
+		// The cache for the current year cannot be read.
+		if os.IsNotExist(err) {
+			log.Printf("Downloading cached public holidays into %s", hfile)
+			latestHolidays := getPublicHolidays(srv)
+			storePublicHolidays(hfile, latestHolidays)
+		} else {
+			log.Fatal(errors.Wrap(err, fmt.Sprintf("failed to stat cache file %s", hfile)))
+		}
+	}
+
+	cacheFiles, err := ioutil.ReadDir(cacheDir)
+	if err != nil {
+		log.Fatal(errors.Wrap(err, "failed to list cache files"))
+	}
+	for _, hfileInfo := range cacheFiles {
+		hfile := filepath.Join(cacheDir, hfileInfo.Name())
+		log.Printf("Loading cached public holidays from %s", hfile)
+		someHolidays, err := loadCachedPublicHolidays(hfile)
+		if err != nil {
+			log.Fatal(errors.Wrap(err, fmt.Sprintf("failed to load cache file %s", hfile)))
+		}
+		for k, v := range someHolidays {
+			holidays[k] = v
+		}
+	}
+
+	return holidays
+}
+
 func updateEvent(srv *calendar.Service, calId string, ev *calendar.Event, daysOff, effDaysOff, accrued, spent float64) {
 	balanceline := fmt.Sprintf("vacation from %s to %s: %.1f days (effective %.1f), accrued %.1f, spent %.1f balance %.1f",
 		ev.Start.Date, ev.End.Date, daysOff, effDaysOff, accrued, spent, accrued-spent)
@@ -335,7 +370,7 @@ func dateSpan(ev *calendar.Event) (b, e time.Time, err error) {
 	return b, e, nil
 }
 
-func loadPublicHolidays(path string) (map[string]string, error) {
+func loadCachedPublicHolidays(path string) (map[string]string, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
