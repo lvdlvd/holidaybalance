@@ -238,6 +238,11 @@ func main() {
 		accruedEoy := accrued + fte*HolidaysPerCalendarDay*float64(eoy.Sub(mustDate(lastVacationDate))/(24*time.Hour))
 		fmt.Printf("vacation at %s: accrued %.1f, balance %.1f\n", eoy, accruedEoy, accruedEoy-spent)
 	}
+
+	fmt.Println()
+	if !*noUpdate {
+		fmt.Println("All calendar entries are up to date.")
+	}
 }
 
 func loadPublicHolidays(srv *calendar.Service) map[string]string {
@@ -304,8 +309,6 @@ func updateEvent(srv *calendar.Service, calId string, ev *calendar.Event, daysOf
 		} else {
 			log.Printf("Updated event %q (%s)", ev.Summary, ev.Start.Date)
 		}
-	} else {
-		log.Printf("No need to modify event %q (%s)", ev.Summary, ev.Start.Date)
 	}
 }
 
