@@ -5,12 +5,13 @@
 //      go install github.com/lvdlvd/holidaybalance
 //      # obtain a client_secret.json as per https://developers.google.com/google-apps/calendar/quickstart/go
 //
-//      holidaybalance [-n] user@yourdomain.ai
+//      holidaybalance [-u] user@yourdomain.ai
 //
-//  The -n flag supresses the updating of calendar entries.
+//  By default it only shows the vacation status. Use -u to update the calendar entries.
 //
 //  The program iterates over the listed calendar for whole-day entries with
-//  summary (title) containing the words "employee start date" and "{vacation|holiday} [half day]".
+//  summary (title) containing the words "employee start date" and "vacation",
+//  "holiday", "half day".
 //
 //  The program will query the public holiday calendar for Switzerland/Zürich. It caches a local copy.
 //
@@ -101,7 +102,7 @@ const (
 	KANTON = "Zurich"
 )
 
-var noUpdate = flag.Bool("n", false, "don't update the calendar entries with new descriptions")
+var updateCalendar = flag.Bool("u", false, "update the calendar entries with new descriptions")
 var verbose = flag.Bool("v", false, "print more info")
 
 func main() {
@@ -240,8 +241,10 @@ func main() {
 	}
 
 	fmt.Println()
-	if !*noUpdate {
+	if *updateCalendar {
 		fmt.Println("All calendar entries are up to date.")
+	} else {
+		fmt.Printf("To update the calendar entries, run: %s -u %s", os.Args[0], calName)
 	}
 }
 
@@ -292,7 +295,7 @@ func updateEvent(srv *calendar.Service, calId string, ev *calendar.Event, daysOf
 		ev.Start.Date, ev.End.Date, daysOff, effDaysOff, accrued, spent, accrued-spent)
 	fmt.Println(balanceline)
 
-	if *noUpdate {
+	if !*updateCalendar {
 		return
 	}
 
