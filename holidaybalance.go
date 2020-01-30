@@ -369,6 +369,11 @@ func getPublicHolidays(srv *calendar.Service) map[string]string {
 			continue
 		}
 
+		if strings.Contains(ev.Summary, "Valentine") || strings.Contains(ev.Summary, "Daylight") {
+			// Not really a holiday
+			continue
+		}
+
 		b, e, err := dateSpan(ev)
 		if err != nil {
 			log.Printf("skipping %q: %v", ev.Summary, err)
