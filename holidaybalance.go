@@ -365,7 +365,8 @@ func getPublicHolidays(srv *calendar.Service) map[string]string {
 	for _, ev := range listAllDayEvents(srv, holidayCalendar) {
 
 		// if the description contains holiday in, it better contain Zurich too.
-		if strings.Contains(ev.Description, "holiday in") && !strings.Contains(ev.Description, KANTON) {
+		regional := strings.Contains(ev.Description, "holiday in") || strings.Contains(ev.Description, "observance in")
+		if regional && !strings.Contains(ev.Description, KANTON) {
 			continue
 		}
 
