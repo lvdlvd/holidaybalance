@@ -5,12 +5,13 @@
 //      go install github.com/lvdlvd/holidaybalance
 //      # obtain a client_secret.json as per https://developers.google.com/google-apps/calendar/quickstart/go
 //
-//      holidaybalance [-n] user@yourdomain.ai
+//      holidaybalance [-u] user@yourdomain.ai
 //
-//  The -n flag supresses the updating of calendar entries.
+//  By default it only shows the vacation status. Use -u to update the calendar entries.
 //
 //  The program iterates over the listed calendar for whole-day entries with
-//  summary (title) containing the words "employee start date" and "{vacation|holiday} [half day]".
+//  summary (title) containing the words "employee start date" and "vacation",
+//  "holiday", "half day".
 //
 //  The program will query the public holiday calendar for Switzerland/Zürich. It caches a local copy.
 //
@@ -79,6 +80,7 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 
+	"github.com/pkg/errors"
 	"google.golang.org/api/calendar/v3"
 )
 
@@ -100,14 +102,15 @@ const (
 	KANTON = "Zurich"
 )
 
-var noUpdate = flag.Bool("n", false, "don't update the calendar entries with new descriptions")
+var updateCalendar = flag.Bool("u", false, "update the calendar entries with new descriptions")
+var verbose = flag.Bool("v", false, "print more info")
 
 func main() {
 
 	flag.Parse()
 
 	if len(flag.Args()) != 1 {
-		log.Fatalln("Usage: %s user@example.org", os.Args[0])
+		log.Fatalf("Usage: %s user@example.org", os.Args[0])
 	}
 	calName := flag.Arg(0)
 
@@ -115,23 +118,16 @@ func main() {
 
 	cal, err := srv.CalendarList.Get(calName).Do()
 	if err != nil {
-		log.Fatalln(err)
+		log.Fatalln(errors.Wrap(err, fmt.Sprintf("Failed to get events from %s", calName)))
 	}
 	log.Printf("Calendar %q id: %v", calName, cal.Id)
 
-	hfile := filepath.Join(filepath.Dir(os.Args[0]), "publicholidays.json")
-	holidays, err := loadPublicHolidays(hfile)
-	if err != nil {
-		log.Printf("Loading cached public holidays: %v", err)
-		log.Printf("Updating cached public holidays...")
-		holidays = getPublicHolidays(srv)
-		storePublicHolidays(hfile, holidays)
-	}
+	holidays := loadPublicHolidays(srv)
 	log.Printf("Got %d public holidays", len(holidays))
 
 	events := listAllDayEvents(srv, calName)
 	if len(events) == 0 {
-		log.Fatalln("No events from %q", calName)
+		log.Fatalf("No events from %q", calName)
 	}
 	endDate := events[0].Start
 	for _, v := range events {
@@ -199,7 +195,7 @@ func main() {
 			continue
 		}
 
-		if reVacation.MatchString(ev.Summary) {
+		if reVacation.MatchString(ev.Summary) || reHalfDay.MatchString(ev.Summary) {
 			if startDate.IsZero() {
 				log.Fatal("no employee start date set. create a 1 day entry with summary 'Employee Start Date' and re-run this program.")
 			}
@@ -229,16 +225,77 @@ func main() {
 			spent += effDaysOff
 
 			updateEvent(srv, cal.Id, ev, daysOff, effDaysOff, accrued, spent)
+		} else {
+			if *verbose {
+				fmt.Printf("IGNORED: %s\n", ev.Summary)
+			}
 		}
+	}
+
+	if lastVacationDate != nil {
+		now := time.Now()
+		y := mustDate(lastVacationDate).Year()
+		eoy := time.Date(y+1, 1, 1, 0, 0, 0, 0, now.Location())
+		accruedEoy := accrued + fte*HolidaysPerCalendarDay*float64(eoy.Sub(mustDate(lastVacationDate))/(24*time.Hour))
+		fmt.Printf("vacation at %s: accrued %.1f, balance %.1f\n", eoy, accruedEoy, accruedEoy-spent)
+	}
+
+	fmt.Println()
+	if *updateCalendar {
+		fmt.Println("All calendar entries are up to date.")
+	} else {
+		fmt.Printf("To update the calendar entries, run: %s -u %s", os.Args[0], calName)
 	}
 }
 
+func loadPublicHolidays(srv *calendar.Service) map[string]string {
+	holidays := make(map[string]string)
+	userCacheDir, err := os.UserCacheDir()
+	if err != nil {
+		log.Fatal(err)
+	}
+	cacheDir := filepath.Join(userCacheDir, filepath.Base(os.Args[0]))
+	os.MkdirAll(cacheDir, 0700)
+
+	year := time.Now()
+	hfile := filepath.Join(cacheDir, year.Format("publicholidays-2006.json"))
+	_, err = os.Stat(hfile)
+	if err != nil {
+		// The cache for the current year cannot be read.
+		if os.IsNotExist(err) {
+			log.Printf("Downloading cached public holidays into %s", hfile)
+			latestHolidays := getPublicHolidays(srv)
+			storePublicHolidays(hfile, latestHolidays)
+		} else {
+			log.Fatal(errors.Wrap(err, fmt.Sprintf("failed to stat cache file %s", hfile)))
+		}
+	}
+
+	cacheFiles, err := ioutil.ReadDir(cacheDir)
+	if err != nil {
+		log.Fatal(errors.Wrap(err, "failed to list cache files"))
+	}
+	for _, hfileInfo := range cacheFiles {
+		hfile := filepath.Join(cacheDir, hfileInfo.Name())
+		log.Printf("Loading cached public holidays from %s", hfile)
+		someHolidays, err := loadCachedPublicHolidays(hfile)
+		if err != nil {
+			log.Fatal(errors.Wrap(err, fmt.Sprintf("failed to load cache file %s", hfile)))
+		}
+		for k, v := range someHolidays {
+			holidays[k] = v
+		}
+	}
+
+	return holidays
+}
+
 func updateEvent(srv *calendar.Service, calId string, ev *calendar.Event, daysOff, effDaysOff, accrued, spent float64) {
-	balanceline := fmt.Sprintf("vacation from %s to %s, %.1f days (effective %.1f), accrued %.1f, spent %.1f balance %.1f",
+	balanceline := fmt.Sprintf("vacation from %s to %s: %.1f days (effective %.1f), accrued %.1f, spent %.1f balance %.1f",
 		ev.Start.Date, ev.End.Date, daysOff, effDaysOff, accrued, spent, accrued-spent)
 	fmt.Println(balanceline)
 
-	if *noUpdate {
+	if !*updateCalendar {
 		return
 	}
 
@@ -255,8 +312,6 @@ func updateEvent(srv *calendar.Service, calId string, ev *calendar.Event, daysOf
 		} else {
 			log.Printf("Updated event %q (%s)", ev.Summary, ev.Start.Date)
 		}
-	} else {
-		log.Printf("No need to modify event %q (%s)", ev.Summary, ev.Start.Date)
 	}
 }
 
@@ -321,7 +376,7 @@ func dateSpan(ev *calendar.Event) (b, e time.Time, err error) {
 	return b, e, nil
 }
 
-func loadPublicHolidays(path string) (map[string]string, error) {
+func loadCachedPublicHolidays(path string) (map[string]string, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -351,7 +406,13 @@ func getPublicHolidays(srv *calendar.Service) map[string]string {
 	for _, ev := range listAllDayEvents(srv, holidayCalendar) {
 
 		// if the description contains holiday in, it better contain Zurich too.
-		if strings.Contains(ev.Description, "holiday in") && !strings.Contains(ev.Description, KANTON) {
+		regional := strings.Contains(ev.Description, "holiday in") || strings.Contains(ev.Description, "observance in")
+		if regional && !strings.Contains(ev.Description, KANTON) {
+			continue
+		}
+
+		if strings.Contains(ev.Summary, "Valentine") || strings.Contains(ev.Summary, "Daylight") {
+			// Not really a holiday
 			continue
 		}
 
